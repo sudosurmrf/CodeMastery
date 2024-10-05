@@ -17,15 +17,16 @@ npm install codemastery
 Usage
 After installation, you can begin using CodeMastery immediately. Run the following command to start generating coding problems:
 
-bash
-Copy code
-npx codemastery
+npm run codemastery
+
+
 Example Workflow
-Choose a Topic: Enter a coding topic you'd like to practice (e.g., arrays, promises, flexbox).
+Choose a Topic: Enter a coding topic you would like to practice (e.g., arrays, promises, flexbox).
 View Generated Files: CodeMastery will generate two files in your working directory:
 <topic-name>questions.js
 <topic-name>answers.js
-Start Coding: Open the generated files and start solving the questions in your preferred IDE.
+Start Coding: Open the generated files and start solving the questions in your preferred IDE!
+
 Roadmap
 ✨ Real-time Code Testing: Coming soon, CodeMastery will integrate real-time code testing for JavaScript.
 ✨ CSS and HTML Practice: Placeholder functionality will be filled with CSS/HTML practice questions and solutions.
@@ -35,15 +36,11 @@ Contributions are welcome! If you have any ideas, bug fixes, or feature requests
 
 Made with 💻 and 🧠 by someone with too much free time.
 
-markdown
-Copy code
-
 ### Key Sections:
 - **Features**: Highlights what the package does.
 - **Installation**: Shows how to install the package.
 - **Usage**: Explains how to use the package after installation.
 - **Roadmap**: Outlines future features, like real-time testing and file analysis.
 - **Contribution**: Invites contributions from the community.
-- **License**: MIT License to allow flexible usage.
 
 Feel free to adjust any section to match your needs. Let me know if you'd like to make any changes!

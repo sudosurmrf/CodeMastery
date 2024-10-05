@@ -7,12 +7,12 @@ const startTool = async() => {
   const response = await prompts({
     type: 'text',
     name: 'topic',
-    message: 'What topic would you like to generate questions for? (e.g., array methods, closures)'
+    message: 'What topic would you like some help with? (try using short responses: e.g., array methods, closures)'
   });
 
   const topic = response.topic;
 
-  // Get questions and answers from LLM (mock for now)
+  // Get questions and answers from LLM 
   const { questions, answers } = await getLLMContent(topic);
 
   // Create the question and answer files
@@ -22,7 +22,7 @@ const startTool = async() => {
 // Placeholder function for calling LLM API
 const getLLMContent = async(fetch, topic) => {
   // Replace with actual LLM API call later
-  // const apiResponse = await fetch('https://example-llm-api.com/generate', {
+  // const apiResponse = await fetch('https://llm-for-later/generate', {
   //   method: 'POST',
   //   headers: { 'Content-Type': 'application/json' },
   //   body: JSON.stringify({ topic })
