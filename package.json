@@ -1,0 +1,18 @@
+{
+  "name": "codemastery",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.cjs",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "fs": "^0.0.1-security",
+    "node-fetch": "^3.3.2",
+    "prompts": "^2.4.2"
+  }
+}
