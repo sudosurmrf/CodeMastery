@@ -4,7 +4,7 @@ const prompts = require('prompts');
 const startTool = async () => {
   const fetch = (await import('node-fetch')).default;
 
-  // Prompt the user for a topic, number of questions, and difficulty
+  
   const response = await prompts({
     type: 'text',
     name: 'topic',
@@ -19,7 +19,7 @@ const startTool = async () => {
     validate: value => (value >= 1 && value <= 3) ? true : 'Please enter a number between 1 and 3'
   });
   const numQuantity = response2.quantity;
-  const numToStr = { 
+  const numToStr = {
     1: "one",
     2: "two",
     3: "three"
@@ -39,16 +39,16 @@ const startTool = async () => {
   });
   const difficulty = response3.difficulty;
 
-  // Get questions and answers from LLM 
-  const { questions } = await getLLMContent(topic, quantity, difficulty);
+  // Get questions and answers from LLM
+  const { questions, answers } = await getLLMContent(topic, quantity, difficulty);
 
-  // Create the question file (will create answer file later)
-  createFiles(topic, questions);
+  // Create the question and answer files
+  createFiles(topic, questions, answers);
 };
 
 const getLLMContent = async (topic, quantity, difficulty) => {
   const fetch = (await import('node-fetch')).default;
-  
+
   const apiResponse = await fetch('https://codemastery.aripine93.workers.dev/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -61,27 +61,30 @@ const getLLMContent = async (topic, quantity, difficulty) => {
 
   const data = await apiResponse.json();
 
-  // Log the response from the API to the console to check the structure, if you're having trouble with the program creating new files, uncomment the below line to help debug. 
-  // console.log('response:', JSON.stringify(data, null, 2));
+  
+  // Example: [{ question: "What is a closure?", answer: "A closure is ..."}, {...}]
+  
+  const questionList = data.questions.map((item, index) => `Q${index + 1}: ${item.question}`).join('\n');
+  const answerList = data.questions.map((item, index) => `Q${index + 1}: ${item.answer}`).join('\n');
 
-  // Check if the response is in the expected format and contains generated_text
-  const objectData = Object.values(data)[0];
   return {
-      questions: `// Questions for ${topic} (${difficulty} level)\n${objectData}`
-    };
+    questions: `// Questions for ${topic} (${difficulty} level)\n${questionList}`,
+    answers: `// Answers for ${topic} (${difficulty} level)\n${answerList}`
+  };
 };
 
-
 // Function to create the files
-const createFiles = (topic, questions) => {
+const createFiles = (topic, questions, answers) => {
   const questionFile = `${topic}questions.js`;
+  const answerFile = `${topic}answers.js`;
 
   // Write the questions to the file
   fs.writeFileSync(questionFile, questions, 'utf8');
   console.log(`Files created: ${questionFile}`);
+
+  // Write the answers to the file
+  fs.writeFileSync(answerFile, answers, 'utf8');
+  console.log(`Files created: ${answerFile}`);
 };
 
-// Start the tool
 startTool();
-
-
