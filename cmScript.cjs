@@ -1,6 +1,7 @@
 const fs = require('fs');
 const prompts = require('prompts');
 
+// Start the tool and get user inputs
 const startTool = async () => {
   const fetch = (await import('node-fetch')).default;
 
@@ -39,14 +40,14 @@ const startTool = async () => {
   });
   const difficulty = response3.difficulty;
 
-  // Get questions and answers from LLM
-  const { updatedData }  = await getLLMContent(topic, quantity, difficulty);
+  // Get questions and answers from the LLM
+  const parsedData = await getLLMContent(topic, quantity, difficulty);
 
   // Create the question and answer files
-  createFiles(topic, updatedData);
+  createFiles(topic, parsedData);
 };
 
-
+// Fetches the API content and returns parsed data
 const getLLMContent = async (topic, quantity, difficulty) => {
   const fetch = (await import('node-fetch')).default;
 
@@ -60,20 +61,32 @@ const getLLMContent = async (topic, quantity, difficulty) => {
       difficulty: difficulty
     })
   });
+  
+  let data  = await apiResponse.json();
+  let parsedData = JSON.parse(data);
 
-  const data = await apiResponse.json();
-  const updatedData = `let info = ${data}`;
-
-  return { updatedData };
+  return parsedData
 };
 
 // Function to create the files
-const createFiles = (topic, updatedData) => {
-  const questionHintFile = `${topic}_questions_hints.js`;
- 
-  fs.writeFileSync(questionHintFile, updatedData, 'utf8');
+const createFiles = (topic, parsedData) => {
+  const questionHintFile = `${topic}_questions.js`;
+  const answerExplanationFile = `${topic}_answers.js`;
+
+  // Extract questions and hints
+  const questionHintContent = parsedData.map(item => `/* Question: ${item.question}\nHint: ${item.hint} */`).join('\n\n');
+
+  // Extract answers and explanations
+  const answerExplanationContent = parsedData.map(item => `/* Answer: ${item.answer}\nExplanation: ${item.explanation} */`).join('\n\n');
+
+  // Write questions and hints to file
+  fs.writeFileSync(questionHintFile, questionHintContent, 'utf8');
   console.log(`File created: ${questionHintFile}`);
+
+  // Write answers and explanations to file
+  fs.writeFileSync(answerExplanationFile, answerExplanationContent, 'utf8');
+  console.log(`File created: ${answerExplanationFile}`);
 };
 
-
+// Start the tool
 startTool();
