@@ -88,5 +88,4 @@ const createFiles = (topic, parsedData) => {
   console.log(`File created: ${answerExplanationFile}`);
 };
 
-// Start the tool
 startTool();
