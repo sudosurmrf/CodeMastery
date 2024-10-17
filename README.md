@@ -17,7 +17,7 @@ npm install codemastery
 Usage
 After installation, you can begin using CodeMastery immediately. Run the following command to start generating coding problems:
 
-npm run codemastery
+npx codemastery
 
 
 Example Workflow

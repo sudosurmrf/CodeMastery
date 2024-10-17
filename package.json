@@ -1,13 +1,13 @@
 {
   "name": "codemastery",
-  "version": "1.1.2",
+  "version": "1.1.5",
   "main": "index.js",
   "bin": {
     "codemastery": "./bin/cmScript.cjs"
   },
   "scripts": {
-    "postinstall": "node ./node_modules/scripts/add-codemastery-to-scripts.js && node ./node_modules/scripts/os-check.js",
-    "codemastery": "node ./node_modules/codemastery/bin/cmScript.cjs",
+    "postinstall": "node ./scripts/add-codemastery-to-scripts.js && node ./scripts/os-check.js",
+    "codemastery": "node -e \"require('codemastery/bin/cmScript.cjs')\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": ["fullstack", "code", "mastery", "codemastery", "coding help"],
