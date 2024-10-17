@@ -15,7 +15,7 @@ const startTool = async () => {
   const response = await prompts({
     type: 'text',
     name: 'topic',
-    message: 'What topic would you like some help with? (e.g., specific array methods, closures, async/await)'
+    message: 'What topic would you like some help with? Try using as few words as possible (e.g., specific array methods, closures, async/await, functions)'
   });
   const topic = response.topic;
 
