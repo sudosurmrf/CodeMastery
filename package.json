@@ -6,8 +6,8 @@
     "codemastery": "./bin/cmScript.cjs"
   },
   "scripts": {
-    "postinstall": "node ./scripts/add-codemastery-to-scripts.js && node ./scripts/os-check.js",
-    "codemastery": "node ./bin/cmScript.cjs",
+    "postinstall": "node ./node_modules/scripts/add-codemastery-to-scripts.js && node ./node_modules/scripts/os-check.js",
+    "codemastery": "node ./node_modules/codemastery/bin/cmScript.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": ["fullstack", "code", "mastery", "codemastery", "coding help"],
