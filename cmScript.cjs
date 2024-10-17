@@ -4,7 +4,7 @@ const prompts = require('prompts');
 const startTool = async () => {
   const fetch = (await import('node-fetch')).default;
 
-  
+  // Get the user inputs
   const response = await prompts({
     type: 'text',
     name: 'topic',
@@ -23,7 +23,7 @@ const startTool = async () => {
     1: "one",
     2: "two",
     3: "three"
-  }
+  };
   const quantity = numToStr[numQuantity];
 
   const response3 = await prompts({
@@ -40,15 +40,17 @@ const startTool = async () => {
   const difficulty = response3.difficulty;
 
   // Get questions and answers from LLM
-  const { questions, answers } = await getLLMContent(topic, quantity, difficulty);
+  const { updatedData }  = await getLLMContent(topic, quantity, difficulty);
 
   // Create the question and answer files
-  createFiles(topic, questions, answers);
+  createFiles(topic, updatedData);
 };
+
 
 const getLLMContent = async (topic, quantity, difficulty) => {
   const fetch = (await import('node-fetch')).default;
 
+  // Fetching data from the web worker
   const apiResponse = await fetch('https://codemastery.aripine93.workers.dev/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -60,31 +62,18 @@ const getLLMContent = async (topic, quantity, difficulty) => {
   });
 
   const data = await apiResponse.json();
+  const updatedData = `let info = ${data}`;
 
-  
-  // Example: [{ question: "What is a closure?", answer: "A closure is ..."}, {...}]
-  
-  const questionList = data.questions.map((item, index) => `Q${index + 1}: ${item.question}`).join('\n');
-  const answerList = data.questions.map((item, index) => `Q${index + 1}: ${item.answer}`).join('\n');
-
-  return {
-    questions: `// Questions for ${topic} (${difficulty} level)\n${questionList}`,
-    answers: `// Answers for ${topic} (${difficulty} level)\n${answerList}`
-  };
+  return { updatedData };
 };
 
 // Function to create the files
-const createFiles = (topic, questions, answers) => {
-  const questionFile = `${topic}questions.js`;
-  const answerFile = `${topic}answers.js`;
-
-  // Write the questions to the file
-  fs.writeFileSync(questionFile, questions, 'utf8');
-  console.log(`Files created: ${questionFile}`);
-
-  // Write the answers to the file
-  fs.writeFileSync(answerFile, answers, 'utf8');
-  console.log(`Files created: ${answerFile}`);
+const createFiles = (topic, updatedData) => {
+  const questionHintFile = `${topic}_questions_hints.js`;
+ 
+  fs.writeFileSync(questionHintFile, updatedData, 'utf8');
+  console.log(`File created: ${questionHintFile}`);
 };
+
 
 startTool();
