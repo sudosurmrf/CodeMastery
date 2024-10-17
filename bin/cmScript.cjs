@@ -1,3 +1,9 @@
+#!/usr/bin/env node
+
+// Your script logic
+console.log('Codemastery has started running!');
+
+
 const fs = require('fs');
 const prompts = require('prompts');
 
