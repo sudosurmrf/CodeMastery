@@ -6,7 +6,7 @@
     "codemastery": "./bin/cmScript.cjs"
   },
   "scripts": {
-    "postinstall": "node ./scripts/add-codemastery-to-scripts.js",
+    "postinstall": "node ./scripts/add-codemastery-to-scripts.js && node ./scripts/os-check.js",
     "codemastery": "node ./bin/cmScript.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
