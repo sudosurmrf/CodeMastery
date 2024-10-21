@@ -11,11 +11,15 @@
 ## Installation
 
 To get started, simply install the package using NPM:
-
+Make sure to have a package.json already setup (npm init -y)
 ```bash
 npm install codemastery
 Usage
 After installation, you can begin using CodeMastery immediately. Run the following command to start generating coding problems:
+Either use:
+npm run codemastery
+
+or 
 
 npx codemastery
 
