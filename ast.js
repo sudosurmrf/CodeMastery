@@ -4,7 +4,7 @@ const acorn = require("acorn");
 const walk = require("acorn-walk");
 
 // add any files or folders you want the code-check to ignore
-const ignoreList = ["node_modules", "dist", "build", "package-lock.json", "package.json", ".gitignore", "README.md"];
+const ignoreList = ["node_modules", "dist", "build", "package-lock.json", "package.json", ".gitignore", "README.md", "tmpnodejsnpm", ".git"];
 
 // function to recursively read and log the issues in .js, .jsx, and .cjs files
 const analyzeDirectory = (dirPath) => {
