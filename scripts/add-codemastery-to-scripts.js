@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const userPackageJsonPath = path.join(process.cwd(), 'package.json');
+const userPackageJsonPath = path.resolve(process.cwd(), '..', '..', 'package.json');
 
 const MAX_RETRIES = 20;
 let retries = 0;
