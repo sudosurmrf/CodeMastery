@@ -33,7 +33,8 @@ const analyzeFile = (filePath) => {
   try {
     console.log(`Starting analysis on file: ${filePath}`);
     const code = fs.readFileSync(filePath, 'utf-8');
-    const ast = acorn.parse(code, { ecmaVersion: 2020, locations: true });
+    const sourceType = filePath.endsWith('.cjs') ? 'script' : 'module';
+    const ast = acorn.parse(code, { ecmaVersion: 2020, sourceType, locations: true });
     const declaredVariables = new Map();
 
     // using an ast, find each issue by node
