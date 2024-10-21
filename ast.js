@@ -2,9 +2,10 @@ const fs = require("fs");
 const path = require("path");
 const acorn = require("acorn");
 const walk = require("acorn-walk");
+const jsx = require('acorn-jsx');
 
 // add any files or folders you want the code-check to ignore
-const ignoreList = ["node_modules", "dist", "build", "package-lock.json", "package.json", ".gitignore", "README.md"];
+const ignoreList = ["node_modules", "dist", "build", "package-lock.json", "package.json", ".gitignore", "README.md", "tmpnodejsnpm", ".git"];
 
 // function to recursively read and log the issues in .js, .jsx, and .cjs files
 const analyzeDirectory = (dirPath) => {
@@ -33,7 +34,18 @@ const analyzeFile = (filePath) => {
   try {
     console.log(`Starting analysis on file: ${filePath}`);
     const code = fs.readFileSync(filePath, 'utf-8');
-    const ast = acorn.parse(code, { ecmaVersion: 2020, locations: true });
+    const sourceType = filePath.endsWith('.cjs') ? 'script' : 'module';
+    let ast;
+
+    if (sourceType === 'script') {
+      // use regular acorn for .cjs "script"
+      ast = acorn.parse(code, { ecmaVersion: 2020, sourceType, locations: true });
+    } else {
+      // use the jsx extension for any module files
+      const Parser = acorn.Parser.extend(jsx());
+      ast = Parser.parse(code, { ecmaVersion: 2020, sourceType, locations: true });
+    }
+
     const declaredVariables = new Map();
 
     // using an ast, find each issue by node
