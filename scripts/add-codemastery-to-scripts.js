@@ -6,7 +6,7 @@ const userPackageJsonPath = path.resolve(process.cwd(), '..', '..', 'package.jso
 const MAX_RETRIES = 20;
 let retries = 0;
 
-function tryAddScript() {
+const tryAddScript = () => {
   if (fs.existsSync(userPackageJsonPath)) {
     try {
       let userPackageJson = require(userPackageJsonPath);
@@ -14,6 +14,8 @@ function tryAddScript() {
       // Adds the codemastery script to the user's package.json for simplicity
       userPackageJson.scripts = userPackageJson.scripts || {};
       userPackageJson.scripts['codemastery'] = 'node ./node_modules/codemastery/bin/cmScript.cjs';
+      userPackageJson.scripts['codemastery:scan'] = 'node ./node_modules/codemastery/ast.js';
+      userPackageJson.scripts['codemastery:test'] = 'node ./node_modules/codemastery/ast.js --test';
 
       // Write back the updated package.json with the new script included
       fs.writeFileSync(userPackageJsonPath, JSON.stringify(userPackageJson, null, 2));

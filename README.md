@@ -23,6 +23,16 @@ or
 
 npx codemastery
 
+-------------
+Scanning and testing:
+
+To scan recursively in the root, run: 
+
+npm run codemastery:scan
+
+To scan a test file, run:
+
+npm run codemastery:test
 
 Example Workflow
 Choose a Topic: Enter a coding topic you would like to practice (e.g., arrays, promises, flexbox).
