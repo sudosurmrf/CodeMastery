@@ -42,13 +42,11 @@ const analyzeFile = (filePath) => {
         // adds vars to the map before usage
         const variableName = node.id.name;
         declaredVariables.set(variableName, false);
-        console.log(`Declared variable: ${variableName} in file ${filePath}`);
       },
       Identifier: (node) => {
         // marks the vars as used
         if (declaredVariables.has(node.name)) {
           declaredVariables.set(node.name, true);
-          console.log(`Variable used: ${node.name} in file ${filePath}`);
         }
       },
       BinaryExpression: (node) => {
