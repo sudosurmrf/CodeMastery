@@ -47,6 +47,7 @@ const analyzeFile = (filePath) => {
     }
 
     const declaredVariables = new Map();
+    const functionDefinitions = new Map();
 
     // using an ast, find each issue by node
     walk.simple(ast, {
@@ -88,13 +89,44 @@ const analyzeFile = (filePath) => {
         if (!node.test) {
           console.log(`Potential infinite loop in file ${filePath} at line ${node.loc ? node.loc.start.line : 'unknown'}`);
         }
+      },
+      FunctionDeclaration: (node) => {
+        // Record function definitions
+        const functionName = node.id.name;
+        functionDefinitions.set(functionName, { params: node.params.length, used: false, loc: node.loc });
+      },
+      FunctionExpression: (node) => {
+        // Check for unused or redundant functions
+        if (node.id && node.id.name) {
+          const functionName = node.id.name;
+          functionDefinitions.set(functionName, { params: node.params.length, used: false, loc: node.loc });
+        }
+      },
+      MemberExpression: (node) => {
+        // Check for deeply nested member expressions
+        let depth = 0;
+        let current = node;
+        while (current && current.object) {
+          depth++;
+          current = current.object;
+        }
+        if (depth > 3) {
+          console.log(`Deeply nested member expression found in file ${filePath} at line ${node.loc ? node.loc.start.line : 'unknown'}`);
+        }
       }
     });
 
-    // logs the unused vars
+    // Logs the unused vars
     declaredVariables.forEach((isUsed, variableName) => {
       if (!isUsed) {
         console.log(`Unused variable: ${variableName} in file ${filePath}`);
+      }
+    });
+
+    // Logs unused functions
+    functionDefinitions.forEach((info, functionName) => {
+      if (!info.used) {
+        console.log(`Unused function: ${functionName} in file ${filePath} at line ${info.loc ? info.loc.start.line : 'unknown'}`);
       }
     });
   } catch (error) {
