@@ -16,7 +16,10 @@ const ignoreList = [
   ".gitignore",
   "README.md",
   "tmpnodejsnpm",
-  ".git"
+  ".git",
+  "codeMasteryGraph.html",
+  "outputFile.dot",
+  "codeMasteryGraph.js"
 ];
 
 // ANSI color codes for console logs
@@ -88,7 +91,10 @@ const analyzeFile = async (filePath) => {
             from: node.init,
             to: declaredVariables.join(', '),
             loc: node.loc,
-            file: filePath, // Include file path
+            file: filePath,
+            type: 'declaration',
+            fromType: getNodeType(node.init),
+            toType: 'variable',
           });
         }
       }
@@ -102,6 +108,9 @@ const analyzeFile = async (filePath) => {
           to: assignedVar,
           loc: node.loc,
           file: filePath,
+          type: 'assignment',
+          fromType: getNodeType(expression),
+          toType: 'variable',
         });
       }
 
@@ -160,7 +169,10 @@ const analyzeFile = async (filePath) => {
                   from: arg,
                   to: param.name,
                   loc: arg.loc,
-                  file: functionFile, // Use the function's file
+                  file: functionFile,
+                  type: 'parameter',
+                  fromType: getNodeType(arg),
+                  toType: 'parameter',
                 });
               }
             }
@@ -288,8 +300,6 @@ if (node.type === 'MemberExpression') {
         issues.push(`Unused variable: ${variableName} in file ${filePath}`);
       }
     }
-
-
     allIssues.push(...issues);
     allDataFlowEdges.push(...dataFlowEdges);
     // Check for unused functions after traversal
@@ -300,12 +310,6 @@ if (node.type === 'MemberExpression') {
         );
       }
     });
-
-    // // Output the data flow edges (leave this for now for debugging)
-    // for (const edge of dataFlowEdges) {
-    //   console.log(`Data flows from ${getNodeDescription(edge.from)} to ${edge.to} at line ${edge.loc.start.line}`);
-    // }
-
     // Output the issues
     for (const issue of issues) {
       console.log(`${COLOR_GREEN}${issue}${COLOR_RESET}`);
@@ -367,6 +371,60 @@ function getNodeLabel(node, fileName) {
   return sanitizeNodeLabel(`${fileName}:${nodeDesc}`);
 }
 
+function getNodeType(node) {
+  if (!node) return 'unknown';
+  if (typeof node === 'string') return 'variable';
+  switch (node.type) {
+    case 'Literal':
+      return 'literal';
+    case 'Identifier':
+      return 'variable';
+    case 'CallExpression':
+      return 'functionCall';
+    case 'FunctionDeclaration':
+    case 'FunctionExpression':
+    case 'ArrowFunctionExpression':
+      return 'function';
+    case 'BinaryExpression':
+      return 'expression';
+    default:
+      return 'expression';
+  }
+}
+
+function transformDataForD3(dataFlowEdges) {
+  const nodesMap = new Map(); // init nodes map
+  const links = [];
+
+  function addNode(name, type) {
+    if (!nodesMap.has(name)) {
+      nodesMap.set(name, { name, type });
+    }
+  }
+
+  dataFlowEdges.forEach(edge => {
+    const sourceName = getNodeDescription(edge.from);
+    const targetName = getNodeDescription(edge.to);
+
+    // **Add nodes to nodesMap with their types**
+    addNode(sourceName, edge.fromType);
+    addNode(targetName, edge.toType);
+
+    // Add link for graph
+    links.push({
+      source: sourceName,
+      target: targetName,
+      type: edge.type || 'dataFlow',
+      loc: edge.loc,
+      file: edge.file,
+    });
+  });
+
+  // converts nodes object to array
+  const nodes = Array.from(nodesMap.values());
+
+  return { nodes, links };
+}
 
 // Function to generate the DOT file for Graphviz
 async function generateDotFile(dataFlowEdges, outputFilePath) {
@@ -433,8 +491,13 @@ function sanitizeNodeLabel(label) {
     const rootDir = path.resolve(".");
     await analyzeDirectory(rootDir);
 
-    const outputFilePath = process.cwd() + '/outputFile.dot';
-    await generateDotFile(allDataFlowEdges, outputFilePath);
-    console.log(`Combined data flow graph saved to ${outputFilePath}`);
+    const transformedData = transformDataForD3(allDataFlowEdges);
+    const outputFilePath = process.cwd() + '/data_flow.json';
+    await fs.writeFile(outputFilePath, JSON.stringify(transformedData, null, 2), 'utf8');
+    console.log(`Data flow JSON saved to ${outputFilePath}`);
+
+    const outputFilePathDot = process.cwd() + '/outputFile.dot';
+    await generateDotFile(allDataFlowEdges, outputFilePathDot);
+    console.log(`Combined data flow graph saved to ${outputFilePathDot}`);
   }
 })();
