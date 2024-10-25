@@ -34,6 +34,9 @@ To scan a test file, run:
 
 npm run codemastery:test
 
+
+After the scan is complete, run npx http-server to open a webpage that will display an interactive graph of your data flow!
+
 Example Workflow
 Choose a Topic: Enter a coding topic you would like to practice (e.g., arrays, promises, flexbox).
 View Generated Files: CodeMastery will generate two files in your working directory:
