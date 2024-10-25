@@ -1,152 +1,261 @@
-const fs = require("fs");
-const path = require("path");
-const acorn = require("acorn");
-const walk = require("acorn-walk");
+const fs = require('fs').promises;
+const path = require('path');
+const acorn = require('acorn');
+const walk = require('acorn-walk');
 const jsx = require('acorn-jsx');
 
-// add any files or folders you want the code-check to ignore
-const ignoreList = ["node_modules", "dist", "build", "package-lock.json", "package.json", ".gitignore", "README.md", "tmpnodejsnpm", ".git"];
+// add any ignores here (put it the majority I could think of)
+const ignoreList = [
+  "node_modules",
+  "dist",
+  "build",
+  "package-lock.json",
+  "package.json",
+  ".gitignore",
+  "README.md",
+  "tmpnodejsnpm",
+  ".git"
+];
 
-// function to recursively read and log the issues in .js, .jsx, and .cjs files
-const analyzeDirectory = (dirPath) => {
+// Function to recursively read and log issues in .js, .jsx, and .cjs files
+const analyzeDirectory = async (dirPath) => {
   console.log(`Analyzing directory: ${dirPath}`);
-  fs.readdirSync(dirPath).forEach(file => {
-    const fullPath = path.join(dirPath, file);
-    const stats = fs.statSync(fullPath);
+  try {
+    const files = await fs.readdir(dirPath);
+    for (const file of files) {
+      const fullPath = path.join(dirPath, file);
+      const stats = await fs.stat(fullPath); //needed to check if the item is a directory or a file. if file, analyze and if dir then analyzeDir
 
-    if (ignoreList.some(ignore => fullPath.includes(ignore))) {
-      console.log(`Ignoring: ${fullPath}`);
-      return;
-    }
+      // ignore list check
+      if (ignoreList.some(ignore => fullPath.includes(ignore))) {
+        console.log(`Ignoring: ${fullPath}`);
+        continue;
+      }
 
-    if (stats.isDirectory()) {
-      // Recursively analyze subdirectories
-      analyzeDirectory(fullPath);
-    } else if (file.endsWith('.js') || file.endsWith('.jsx') || file.endsWith('.cjs')) {
-      console.log(`Analyzing file: ${fullPath}`);
-      analyzeFile(fullPath);
+      if (stats.isDirectory()) {
+        // Recursively analyze subdirectories
+        await analyzeDirectory(fullPath);
+      } else if (file.endsWith('.js') || file.endsWith('.jsx') || file.endsWith('.cjs')) {
+        console.log(`Analyzing file: ${fullPath}`);
+        await analyzeFile(fullPath);
+      }
     }
-  });
+  } catch (error) {
+    console.error(`Error analyzing directory ${dirPath}: ${error.message}`);
+  }
 };
 
-// used for each individual file
-const analyzeFile = (filePath) => {
+// used for each file analyze (basically the real program)
+const analyzeFile = async (filePath) => {
   try {
     console.log(`Starting analysis on file: ${filePath}`);
-    const code = fs.readFileSync(filePath, 'utf-8');
+    const code = await fs.readFile(filePath, 'utf-8');
     const sourceType = filePath.endsWith('.cjs') ? 'script' : 'module';
     let ast;
 
     if (sourceType === 'script') {
-      // use regular acorn for .cjs "script"
-      ast = acorn.parse(code, { ecmaVersion: 2020, sourceType, locations: true });
+      // use regular Acorn for .cjs "script"
+      ast = acorn.parse(code, { ecmaVersion: 'latest', sourceType, locations: true });
     } else {
-      // use the jsx extension for any module files
+      // use the JSX extension for module files
       const Parser = acorn.Parser.extend(jsx());
-      ast = Parser.parse(code, { ecmaVersion: 2020, sourceType, locations: true });
+      ast = Parser.parse(code, { ecmaVersion: 'latest', sourceType, locations: true });
     }
 
-    const declaredVariables = new Map();
+    const scopeStack = [new Map()]; // this needs a global scoping due to undefined set on first empty list each file. 
     const functionDefinitions = new Map();
+    const issues = [];
 
-    // using an ast, find each issue by node
-    walk.simple(ast, {
-      VariableDeclarator: (node) => {
-        // adds vars to the map before usage
+    walk.fullAncestor(ast, (node, state, ancestors) => { //not certain I need the state still
+      // function to walk through scopes
+      if (
+        node.type === 'FunctionDeclaration' ||
+        node.type === 'FunctionExpression' ||
+        node.type === 'ArrowFunctionExpression' ||
+        node.type === 'BlockStatement'
+      ) {
+        scopeStack.push(new Map());
+      }
+
+      // Handle variable declarations
+      if (node.type === 'VariableDeclarator') {
+        const currentScope = scopeStack[scopeStack.length - 1]; //for tracking nested scopes and accurately figuring out which scope we are in
         const variableName = node.id.name;
-        declaredVariables.set(variableName, false);
-      },
-      Identifier: (node) => {
-        // marks the vars as used
-        if (declaredVariables.has(node.name)) {
-          declaredVariables.set(node.name, true);
-        }
-      },
-      BinaryExpression: (node) => {
-        //checks weak equality (==)
-        if (node.operator === '==') {
-          console.log(`Weak equality found in file ${filePath} at line ${node.loc ? node.loc.start.line : 'unknown'}`);
-        }
-      },
-      CallExpression: (node) => {
-        // checks common issues with function calls, like missing arguments
-        const calleeName = node.callee.name;
-        if (calleeName) {
-          const args = node.arguments;
-          if (args.length === 0) {
-            console.log(`Function call to ${calleeName} in file ${filePath} at line ${node.loc ? node.loc.start.line : 'unknown'} might be missing arguments.`);
+        currentScope.set(variableName, false); //the false identifies it as not being used yet. 
+      }
+
+      // Handle variable usages
+      if (node.type === 'Identifier') {
+        const parent = ancestors[ancestors.length - 1];
+
+        if ( //used to determine if the identifier node represents a usage of a variable and then changes it to true in the scopeStack if so. 
+          (parent.type === 'VariableDeclarator' && parent.id === node) ||
+          (parent.type === 'FunctionDeclaration' && parent.id === node) ||
+          (parent.type === 'FunctionExpression' && parent.id === node) ||
+          (parent.type === 'ArrowFunctionExpression' && parent.id === node)
+        ) {
+          // Declaration identifier, skip
+        } else if (parent.type === 'MemberExpression' && parent.property === node && !parent.computed) { //means it is accessing an objects property, not a variable
+          // Property access, skip
+        } else {
+          // for variable usage, sets the node to true (it was used)
+          for (let i = scopeStack.length - 1; i >= 0; i--) {
+            if (scopeStack[i].has(node.name)) {
+              scopeStack[i].set(node.name, true);
+              break;
+            }
           }
         }
-      },
-      IfStatement: (node) => {
-        // check for complex or always true/false conditions
-        if (node.test.type === 'Literal') {
-          console.log(`Potentially redundant conditional in file ${filePath} at line ${node.loc ? node.loc.start.line : 'unknown'}`);
-        }
-      },
-      ForStatement: (node) => {
-        // check for potential infinite loops
-        if (!node.test) {
-          console.log(`Potential infinite loop in file ${filePath} at line ${node.loc ? node.loc.start.line : 'unknown'}`);
-        }
-      },
-      FunctionDeclaration: (node) => {
-        // Record function definitions
-        const functionName = node.id.name;
-        functionDefinitions.set(functionName, { params: node.params.length, used: false, loc: node.loc });
-      },
-      FunctionExpression: (node) => {
-        // Check for unused or redundant functions
+      }
+
+      // Handle function declarations which is used to store info about each declaration
+      if (
+        node.type === 'FunctionDeclaration' ||
+        node.type === 'FunctionExpression' ||
+        node.type === 'ArrowFunctionExpression'
+      ) {
         if (node.id && node.id.name) {
           const functionName = node.id.name;
-          functionDefinitions.set(functionName, { params: node.params.length, used: false, loc: node.loc });
+          functionDefinitions.set(functionName, {
+            params: node.params.length, // the amount of arguments or params the fn takes
+            used: false, //initial state before the function calls occurs
+            loc: node.loc, //its location for console logs about line and place
+          });
         }
-      },
-      MemberExpression: (node) => {
-        // Check for deeply nested member expressions
+      }
+
+      // Handle function calls
+      if (node.type === 'CallExpression') {
+        const callee = node.callee;
+        let calleeName = null;
+
+        if (callee.type === 'Identifier') { //gets the name of the fn if id
+          calleeName = callee.name;
+        } else if (callee.type === 'MemberExpression') { //gets the property.name of the object if MemberExp
+          // Handle member expressions if needed
+          calleeName = callee.property.name;
+        }
+        //checks to make sure the number of arguments passed are the correct amount expected by the fn declaration
+        if (calleeName) {
+          if (functionDefinitions.has(calleeName)) {
+            const functionInfo = functionDefinitions.get(calleeName);
+            const argsPassed = node.arguments.length;
+            if (argsPassed < functionInfo.params) {
+              issues.push(
+                `Function call to ${calleeName} in file ${filePath} at line ${node.loc.start.line} might be missing arguments. Expected ${functionInfo.params}, got ${argsPassed}.`
+              );
+            }
+            // Mark function as used
+            functionInfo.used = true;
+          }
+        }
+      }
+
+      // Check for weak equality operators
+      if (node.type === 'BinaryExpression') {
+        if (node.operator === '==' || node.operator === '!=') {
+          issues.push(
+            `Weak equality operator '${node.operator}' found in file ${filePath} at line ${node.loc.start.line}`
+          );
+        }
+      }
+
+      // Check for redundant conditionals
+      if (node.type === 'IfStatement') {
+        if (node.test.type === 'Literal') {
+          issues.push(
+            `Potentially redundant conditional in file ${filePath} at line ${node.loc.start.line}`
+          );
+        }
+      }
+
+      // Check for potential infinite loops
+      if (node.type === 'ForStatement') {
+        if (!node.test) {
+          issues.push(
+            `Potential infinite loop in file ${filePath} at line ${node.loc.start.line}`
+          );
+        }
+      }
+
+      // Check for deeply nested member expressions (if a nested property is recurisvely nested within a set variable of depth. 3 by default, this can be changed if needed)
+      if (node.type === 'MemberExpression') {
         let depth = 0;
         let current = node;
-        while (current && current.object) {
+        while (current && current.type === 'MemberExpression') {
           depth++;
           current = current.object;
         }
         if (depth > 3) {
-          console.log(`Deeply nested member expression found in file ${filePath} at line ${node.loc ? node.loc.start.line : 'unknown'}`);
+          issues.push(
+            `Deeply nested member expression found in file ${filePath} at line ${node.loc.start.line}`
+          );
+        }
+      }
+
+      // Handle exiting scopes - when a scope is exited it is popped from the list and then any unused vars left inside it are declared as unused. 
+      if (
+        node.type === 'FunctionDeclaration' ||
+        node.type === 'FunctionExpression' ||
+        node.type === 'ArrowFunctionExpression' ||
+        node.type === 'BlockStatement'
+      ) {
+        if (scopeStack.length > 1) { //this prevents the global Scope from popping off since global always needs to stay on. 
+          const scope = scopeStack.pop();
+
+          // Check for unused variables in this scope
+          for (const [variableName, isUsed] of scope.entries()) {
+            if (!isUsed) {
+              issues.push(`Unused variable: ${variableName} in file ${filePath}`);
+            }
+          }
         }
       }
     });
 
-    // Logs the unused vars
-    declaredVariables.forEach((isUsed, variableName) => {
+    // After traversal, check for unused variables in the global scope
+    const globalScope = scopeStack[0];
+    for (const [variableName, isUsed] of globalScope.entries()) {
       if (!isUsed) {
-        console.log(`Unused variable: ${variableName} in file ${filePath}`);
+        issues.push(`Unused variable: ${variableName} in file ${filePath}`);
+      }
+    }
+
+    // Check for unused functions after traversal
+    functionDefinitions.forEach((info, functionName) => {
+      if (!info.used) {
+        issues.push(
+          `Unused function: ${functionName} in file ${filePath} at line ${info.loc.start.line}`
+        );
       }
     });
 
-    // Logs unused functions
-    functionDefinitions.forEach((info, functionName) => {
-      if (!info.used) {
-        console.log(`Unused function: ${functionName} in file ${filePath} at line ${info.loc ? info.loc.start.line : 'unknown'}`);
-      }
-    });
+    // outputs the issues
+    for (const issue of issues) {
+      console.log(issue);
+    }
   } catch (error) {
-    console.error(`Failed to parse code in file ${filePath}: ${error.message}`);
+    console.error(`Failed to parse file ${filePath}: ${error.message}`);
   }
 };
 
-// example test path
+// test path for the example file
 const exampleFilePath = path.resolve(__dirname, "../codemastery/example-test-file.js");
 
-// if the --test flag is thrown, the example file will run, otherwise root dir will run recurisvely.
-if (process.argv.includes('--test')) {
-  console.log(`Running analysis on example test file: ${exampleFilePath}`);
-  if (!fs.existsSync(exampleFilePath)) {
-    console.error(`Test file not found: ${exampleFilePath}`);
-    process.exit(1);
+// Main execution
+(async () => {
+  if (process.argv.includes('--test')) {
+    console.log(`Running analysis on example test file: ${exampleFilePath}`);
+    try {
+      await fs.access(exampleFilePath);
+      await analyzeFile(exampleFilePath);
+    } catch {
+      console.error(`Test file not found: ${exampleFilePath}`);
+      process.exit(1);
+    }
+  } else {
+    console.log(`Running analysis on user's project starting from: ${path.resolve(".")}`);
+    const rootDir = path.resolve(".");
+    await analyzeDirectory(rootDir);
   }
-  analyzeFile(exampleFilePath);
-} else {
-  console.log(`Running analysis on user's project starting from: ${path.resolve(".")}`);
-  const rootDir = path.resolve(".");
-  analyzeDirectory(rootDir);
-}
+})();
