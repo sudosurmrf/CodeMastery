@@ -6,7 +6,7 @@ const jsx = require('acorn-jsx');
 const { extractDeclaredVariables } = require('./utils.js');
 const { wrappedWalker } = require('./customWalker.js');
 
-// add any ignores here (put it the majority I could think of)
+// Add any ignores here
 const ignoreList = [
   "node_modules",
   "dist",
@@ -18,20 +18,23 @@ const ignoreList = [
   "tmpnodejsnpm",
   ".git"
 ];
-// ANSI color codes to make the console logs easier to differentiate
-const COLOR_GREEN = "\x1b[32m"; //not convinced this is actually green lol, but it achieves what we want
+
+// ANSI color codes for console logs
+const COLOR_GREEN = "\x1b[32m";
 const COLOR_RESET = "\x1b[0m";
 
-
+let functionParamStack = [];
+const allIssues = [];
+const allDataFlowEdges = [];
 // Function to recursively read and log issues in .js, .jsx, and .cjs files
 const analyzeDirectory = async (dirPath) => {
   try {
     const files = await fs.readdir(dirPath);
     for (const file of files) {
       const fullPath = path.join(dirPath, file);
-      const stats = await fs.stat(fullPath); //needed to check if the item is a directory or a file. if file, analyze and if dir then analyzeDir
+      const stats = await fs.stat(fullPath);
 
-      // ignore list check
+      // Ignore list check
       if (ignoreList.some(ignore => fullPath.includes(ignore))) {
         console.log(`Ignoring: ${fullPath}`);
         continue;
@@ -41,7 +44,6 @@ const analyzeDirectory = async (dirPath) => {
         // Recursively analyze subdirectories
         await analyzeDirectory(fullPath);
       } else if (file.endsWith('.js') || file.endsWith('.jsx') || file.endsWith('.cjs')) {
-        console.log(`Analyzing file: ${fullPath}`);
         await analyzeFile(fullPath);
       }
     }
@@ -50,7 +52,7 @@ const analyzeDirectory = async (dirPath) => {
   }
 };
 
-// used for each file analyze (basically the real program)
+// Function to analyze individual files
 const analyzeFile = async (filePath) => {
   try {
     console.log(`Starting analysis on file: ${filePath}`);
@@ -58,95 +60,113 @@ const analyzeFile = async (filePath) => {
     const sourceType = filePath.endsWith('.cjs') ? 'script' : 'module';
     let ast;
 
-    if (sourceType === 'script') {
-      // use regular Acorn for .cjs "script"
-      ast = acorn.parse(code, { ecmaVersion: 'latest', sourceType, locations: true });
-    } else {
-      // use the JSX extension for module files
-      const Parser = acorn.Parser.extend(jsx());
-      ast = Parser.parse(code, { ecmaVersion: 'latest', sourceType, locations: true });
-    }
+    // Use Acorn parser with necessary plugins
+    const Parser = acorn.Parser.extend(jsx());
+    ast = Parser.parse(code, { ecmaVersion: 'latest', sourceType, locations: true });
 
-    const scopeStack = [new Map()]; // this needs a global scoping due to undefined set on first empty list each file. 
+    const scopeStack = [new Map()]; // Initialize with a global scope
     const functionDefinitions = new Map();
     const issues = [];
+    const dataFlowEdges = [];
 
-    walk.fullAncestor(ast, (node, state, ancestors) => { //not certain I need the state still
-      // function to walk through scopes
-      if (
-        node.type === 'FunctionDeclaration' ||
-        node.type === 'FunctionExpression' ||
-        node.type === 'ArrowFunctionExpression' ||
-        node.type === 'BlockStatement'
-      ) {
-        scopeStack.push(new Map());
-      }
-
-      // Handle variable declarations
+    // Traverse the AST
+    walk.fullAncestor(ast, (node, state, ancestors) => {
+      // Handle variable declarations and initializations
       if (node.type === 'VariableDeclarator') {
-        const currentScope = scopeStack[scopeStack.length - 1]; //for tracking nested scopes and accurately figuring out which scope we are in
         const declaredVariables = extractDeclaredVariables(node.id);
-        for (const variableName of declaredVariables){
-          if (variableName === undefined){
+        const currentScope = scopeStack[scopeStack.length - 1];
+        for (const variableName of declaredVariables) {
+          if (variableName === undefined) {
             console.warn(`Warning: undefined variable at line ${node.loc.start.line} in the file ${filePath}`);
           } else {
-            currentScope.set(variableName, false); //the false identifies it as not being used yet. 
+            currentScope.set(variableName, false); // Mark as not used yet
           }
+        }
+        // Handle initialization (e.g., const x = expr;)
+        if (node.init) {
+          dataFlowEdges.push({
+            from: node.init,
+            to: declaredVariables.join(', '),
+            loc: node.loc,
+            file: filePath, // Include file path
+          });
         }
       }
 
-      // Handle variable usages
-      if (node.type === 'Identifier') {
-        const parent = ancestors[ancestors.length - 1];
-
-        if ( //used to determine if the identifier node represents a usage of a variable and then changes it to true in the scopeStack if so. 
-          (parent.type === 'VariableDeclarator' && parent.id === node) ||
-          (parent.type === 'FunctionDeclaration' && parent.id === node) ||
-          (parent.type === 'FunctionExpression' && parent.id === node) ||
-          (parent.type === 'ArrowFunctionExpression' && parent.id === node)
-        ) {
-          // Declaration identifier, skip
-        } else if (parent.type === 'MemberExpression' && parent.property === node && !parent.computed) { //means it is accessing an objects property, not a variable
-          // Property access, skip
-        } else {
-          // for variable usage, sets the node to true (it was used)
-          for (let i = scopeStack.length - 1; i >= 0; i--) {
-            if (scopeStack[i].has(node.name)) {
-              scopeStack[i].set(node.name, true);
-              break;
-            }
-          }
-        }
+      // Handle assignments
+      if (node.type === 'AssignmentExpression') {
+        const assignedVar = getNodeDescription(node.left);
+        const expression = node.right;
+        dataFlowEdges.push({
+          from: expression,
+          to: assignedVar,
+          loc: node.loc,
+          file: filePath,
+        });
       }
 
-      // Handle function declarations which is used to store info about each declaration
+      // Handle function declarations
       if (
         node.type === 'FunctionDeclaration' ||
         node.type === 'FunctionExpression' ||
         node.type === 'ArrowFunctionExpression'
       ) {
+        // Enter new function scope
+        scopeStack.push(new Map());
+        const params = node.params.map(param => {
+          if (param.type === 'Identifier') {
+            return param.name;
+          }else {
+            return getNodeDescription(param);
+          }
+        });
+        functionParamStack.push(params);
         if (node.id && node.id.name) {
           const functionName = node.id.name;
           functionDefinitions.set(functionName, {
-            params: node.params.length, // the amount of arguments or params the fn takes
-            used: false, //initial state before the function calls occurs
-            loc: node.loc, //its location for console logs about line and place
+            params: node.params.length,
+            used: false,
+            loc: node.loc,
+            file: filePath,
           });
         }
       }
-
       // Handle function calls
       if (node.type === 'CallExpression') {
         const callee = node.callee;
+        const args = node.arguments;
         let calleeName = null;
-
-        if (callee.type === 'Identifier') { //gets the name of the fn if id
+      
+        if (callee.type === 'Identifier') {
           calleeName = callee.name;
-        } else if (callee.type === 'MemberExpression') { //gets the property.name of the object if MemberExp
-          // Handle member expressions if needed
-          calleeName = callee.property.name;
+        } else if (callee.type === 'MemberExpression') {
+          calleeName = getNodeDescription(callee);
         }
-        //checks to make sure the number of arguments passed are the correct amount expected by the fn declaration
+      
+        // Record data flow from arguments to function parameters
+        if (callee.type === 'Identifier') {
+          const functionName = callee.name;
+          // Find the function declaration
+          const functionDeclaration = findFunctionDeclaration(ast, functionName);
+          if (functionDeclaration) {
+            const params = functionDeclaration.params;
+            const functionInfo = functionDefinitions.get(functionName);
+            const functionFile = functionInfo ? functionInfo.file : filePath; // Use the file from function definition
+            for (let i = 0; i < args.length; i++) {
+              const arg = args[i];
+              const param = params[i];
+              if (param && param.type === 'Identifier') {
+                dataFlowEdges.push({
+                  from: arg,
+                  to: param.name,
+                  loc: arg.loc,
+                  file: functionFile, // Use the function's file
+                });
+              }
+            }
+          }
+        }
+      
         if (calleeName) {
           if (functionDefinitions.has(calleeName)) {
             const functionInfo = functionDefinitions.get(calleeName);
@@ -162,68 +182,104 @@ const analyzeFile = async (filePath) => {
         }
       }
 
-      // Check for weak equality operators
-      if (node.type === 'BinaryExpression') {
-        if (node.operator === '==' || node.operator === '!=') {
-          issues.push(
-            `Weak equality operator '${node.operator}' found in file ${filePath} at line ${node.loc.start.line}`
-          );
-        }
-      }
+      // Handle variable usages
+      
+      if (node.type === 'Identifier') {
+        const parent = ancestors[ancestors.length - 1];
+      
+        // Skip declarations and property accesses
+        if (
+          (parent.type === 'VariableDeclarator' && parent.id === node) ||
+          (parent.type === 'FunctionDeclaration' && parent.id === node) ||
+          (parent.type === 'FunctionExpression' && parent.id === node) ||
+          (parent.type === 'ArrowFunctionExpression' && parent.id === node) ||
+          (parent.type === 'MemberExpression' && parent.property === node && !parent.computed)
+        ) {
+          // Declaration identifier or property access, skip
+        } else {
+          // Variable usage
+          const currentFunctionParams = functionParamStack[functionParamStack.length - 1] || [];
+          if (currentFunctionParams.includes(node.name)) {
+            // Identifier is a function parameter
+            dataFlowEdges.push({
+              from: node.name, // Parameter name
+              to: getNodeDescription(node),
+              loc: node.loc,
+              file: filePath,
+            });
+          }}}
 
-      // Check for redundant conditionals
-      if (node.type === 'IfStatement') {
-        if (node.test.type === 'Literal') {
-          issues.push(
-            `Potentially redundant conditional in file ${filePath} at line ${node.loc.start.line}`
-          );
-        }
-      }
+      // Handle exiting scopes
+if (
+  node.type === 'FunctionDeclaration' ||
+  node.type === 'FunctionExpression' ||
+  node.type === 'ArrowFunctionExpression' ||
+  node.type === 'BlockStatement'
+) {
+  if (scopeStack.length > 1) { // Don't pop the global scope
+    const scope = scopeStack.pop();
 
-      // Check for potential infinite loops
-      if (node.type === 'ForStatement') {
-        if (!node.test) {
-          issues.push(
-            `Potential infinite loop in file ${filePath} at line ${node.loc.start.line}`
-          );
-        }
+    // Check for unused variables in this scope
+    for (const [variableName, isUsed] of scope.entries()) {
+      if (!isUsed) {
+        issues.push(`Unused variable: ${variableName} in file ${filePath}`);
       }
+    }
+  }
 
-      // Check for deeply nested member expressions (if a nested property is recurisvely nested within a set variable of depth. 3 by default, this can be changed if needed)
-      if (node.type === 'MemberExpression') {
-        let depth = 0;
-        let current = node;
-        while (current && current.type === 'MemberExpression') {
-          depth++;
-          current = current.object;
-        }
-        if (depth > 3) {
-          issues.push(
-            `Deeply nested member expression found in file ${filePath} at line ${node.loc.start.line}`
-          );
-        }
-      }
+  // If exiting a function, pop the function parameter stack
+  if (
+    node.type === 'FunctionDeclaration' ||
+    node.type === 'FunctionExpression' ||
+    node.type === 'ArrowFunctionExpression'
+  ) {
+    functionParamStack.pop();
+  }
+}
 
-      // Handle exiting scopes - when a scope is exited it is popped from the list and then any unused vars left inside it are declared as unused. 
-      if (
-        node.type === 'FunctionDeclaration' ||
-        node.type === 'FunctionExpression' ||
-        node.type === 'ArrowFunctionExpression' ||
-        node.type === 'BlockStatement'
-      ) {
-        if (scopeStack.length > 1) { //this prevents the global Scope from popping off since global always needs to stay on. 
-          const scope = scopeStack.pop();
+// Check for weak equality operators
+if (node.type === 'BinaryExpression') {
+  if (node.operator === '==' || node.operator === '!=') {
+    issues.push(
+      `Weak equality operator '${node.operator}' found in file ${filePath} at line ${node.loc.start.line}`
+    );
+  }
+}
 
-          // Check for unused variables in this scope
-          for (const [variableName, isUsed] of scope.entries()) {
-            if (!isUsed) {
-              issues.push(`Unused variable: ${variableName} in file ${filePath}`);
-            }
-          }
-        }
-      }
-    },
-  null, wrappedWalker);
+// Check for redundant conditionals
+if (node.type === 'IfStatement') {
+  if (node.test.type === 'Literal') {
+    issues.push(
+      `Potentially redundant conditional in file ${filePath} at line ${node.loc.start.line}`
+    );
+  }
+}
+
+// Check for potential infinite loops
+if (node.type === 'ForStatement') {
+  if (!node.test) {
+    issues.push(
+      `Potential infinite loop in file ${filePath} at line ${node.loc.start.line}`
+    );
+  }
+}
+
+// Check for deeply nested member expressions
+if (node.type === 'MemberExpression') {
+  let depth = 0;
+  let current = node;
+  while (current && current.type === 'MemberExpression') {
+    depth++;
+    current = current.object;
+  }
+  if (depth > 3) {
+    issues.push(
+      `Deeply nested member expression found in file ${filePath} at line ${node.loc.start.line}`
+    );
+  }
+}
+}, null, wrappedWalker);
+
 
     // After traversal, check for unused variables in the global scope
     const globalScope = scopeStack[0];
@@ -233,6 +289,9 @@ const analyzeFile = async (filePath) => {
       }
     }
 
+
+    allIssues.push(...issues);
+    allDataFlowEdges.push(...dataFlowEdges);
     // Check for unused functions after traversal
     functionDefinitions.forEach((info, functionName) => {
       if (!info.used) {
@@ -242,21 +301,125 @@ const analyzeFile = async (filePath) => {
       }
     });
 
-    // outputs the issues
+    // // Output the data flow edges (leave this for now for debugging)
+    // for (const edge of dataFlowEdges) {
+    //   console.log(`Data flows from ${getNodeDescription(edge.from)} to ${edge.to} at line ${edge.loc.start.line}`);
+    // }
+
+    // Output the issues
     for (const issue of issues) {
       console.log(`${COLOR_GREEN}${issue}${COLOR_RESET}`);
     }
+
   } catch (error) {
     console.error(`Failed to parse file ${filePath}: ${error.message}`);
   }
 };
 
-// test path for the example file
-const exampleFilePath = path.resolve(__dirname, "../codemastery/example-test-file.js");
+// Helper function to find a function declaration by name
+function findFunctionDeclaration(ast, functionName) {
+  let found = null;
+  walk.simple(ast, {
+    FunctionDeclaration(node) {
+      if (node.id && node.id.name === functionName) {
+        found = node;
+      }
+    },
+  });
+  return found;
+}
 
+// Helper function to describe a node
+function getNodeDescription(node) {
+  if (!node) {
+    return 'undefined';
+  } else if (typeof node === 'string') {
+    return node;
+  } else if (node.type === 'Identifier') {
+    return node.name;
+  } else if (node.type === 'Literal') {
+    return node.raw;
+  } else if (node.type === 'MemberExpression') {
+    return `${getNodeDescription(node.object)}.${getNodeDescription(node.property)}`;
+  } else if (node.type === 'CallExpression') {
+    return `${getNodeDescription(node.callee)}(${node.arguments.map(arg => getNodeDescription(arg)).join(', ')})`;
+  } else if (node.type === 'BinaryExpression') {
+    return `(${getNodeDescription(node.left)} ${node.operator} ${getNodeDescription(node.right)})`;
+  } else if (node.type === 'ThisExpression') {
+    return 'this';
+  } else if (node.type === 'AssignmentPattern') {
+    return `${getNodeDescription(node.left)} = ${getNodeDescription(node.right)}`;
+  } else if (node.type === 'ArrayExpression') {
+    return `[${node.elements.map(elem => getNodeDescription(elem)).join(', ')}]`;
+  } else if (node.type === 'ObjectExpression') {
+    return `{${node.properties.map(prop => `${getNodeDescription(prop.key)}: ${getNodeDescription(prop.value)}`).join(', ')}}`;
+  } else {
+    return node.type;
+  }
+}
+
+function getShortFileName(filePath) {
+  return path.basename(filePath);
+}
+
+function getNodeLabel(node, fileName) {
+  const nodeDesc = getNodeDescription(node);
+  return sanitizeNodeLabel(`${fileName}:${nodeDesc}`);
+}
+
+
+// Function to generate the DOT file for Graphviz
+async function generateDotFile(dataFlowEdges, outputFilePath) {
+  let dotContent = 'digraph DataFlow {\n';
+  dotContent += '  rankdir=TB;\n';
+  dotContent += '  node [shape=box, fontsize=12];\n';
+  dotContent += '  edge [fontsize=10];\n';
+  dotContent += '  concentrate=true;\n';
+  // Group edges by file
+  const edgesByFile = {};
+  for (const edge of dataFlowEdges) {
+    if (!edge.file) {
+      console.warn('Edge missing file property:', edge);
+      continue;
+    }
+    const fileName = edge.file ? getShortFileName(edge.file) : 'unknown';
+    if (!edgesByFile[fileName]) {
+      edgesByFile[fileName] = [];
+    }
+    edgesByFile[fileName].push(edge);
+  }
+
+  // Create subgraphs (clusters) for each file
+  let clusterIndex = 0;
+  for (const [fileName, edges] of Object.entries(edgesByFile)) {
+    dotContent += `  subgraph cluster_${clusterIndex} {\n`;
+    dotContent += `    label="${fileName}";\n`;
+    dotContent += '    style=filled;\n';
+    dotContent += '    color=lightgrey;\n';
+
+    for (const edge of edges) {
+      const fromLabel = getNodeLabel(edge.from, fileName);
+    const toLabel = getNodeLabel(edge.to, fileName);
+    dotContent += `    "${fromLabel}" -> "${toLabel}" [label="Line ${edge.loc.start.line}"];\n`;
+  }
+
+    dotContent += '  }\n';
+    clusterIndex++;
+  }
+
+  dotContent += '}\n';
+
+  await fs.writeFile(outputFilePath, dotContent, 'utf8');
+}
+
+// Helper function to sanitize node labels for DOT format
+function sanitizeNodeLabel(label) {
+  return label.replace(/"/g, '\\"').replace(/\n/g, ' ');
+}
 // Main execution
 (async () => {
   if (process.argv.includes('--test')) {
+    const exampleFilePath = path.resolve(__dirname, "../codemastery/example-test-file.js");
     console.log(`Running analysis on example test file: ${exampleFilePath}`);
     try {
       await fs.access(exampleFilePath);
@@ -269,5 +432,9 @@ const exampleFilePath = path.resolve(__dirname, "../codemastery/example-test-fil
     console.log(`Running analysis on user's project starting from: ${path.resolve(".")}`);
     const rootDir = path.resolve(".");
     await analyzeDirectory(rootDir);
+
+    const outputFilePath = process.cwd() + '/outputFile.dot';
+    await generateDotFile(allDataFlowEdges, outputFilePath);
+    console.log(`Combined data flow graph saved to ${outputFilePath}`);
   }
 })();

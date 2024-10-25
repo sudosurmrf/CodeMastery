@@ -6,7 +6,7 @@
 
 - 📚 **Customizable Coding Practice**: Search for coding topics like "array methods" or "closures" and generate tailored questions and answers.
 - 💡 **Real-time Problem Solving**: Designed to help users practice coding in a familiar environment with automatically generated files.
-- 🔍 **File Analysis (Coming Soon)**: Analyze your existing code to detect methods and patterns, and generate relevant practice questions based on your own projects.
+- 🔍 **File Analysis (Coming Soon)**: Analyze your existing code to detect methods and patterns, and generate relevant practice questions based on your own projects. This will also generate a file which can be used to graph the data flow within your application!
 
 ## Installation
 
