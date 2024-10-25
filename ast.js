@@ -25,7 +25,6 @@ const COLOR_RESET = "\x1b[0m";
 
 // Function to recursively read and log issues in .js, .jsx, and .cjs files
 const analyzeDirectory = async (dirPath) => {
-  console.log(`Analyzing directory: ${dirPath}`);
   try {
     const files = await fs.readdir(dirPath);
     for (const file of files) {
@@ -73,7 +72,6 @@ const analyzeFile = async (filePath) => {
     const issues = [];
 
     walk.fullAncestor(ast, (node, state, ancestors) => { //not certain I need the state still
-      console.log(`Visiting node type of: ${node.type}`)
       // function to walk through scopes
       if (
         node.type === 'FunctionDeclaration' ||
