@@ -3,6 +3,8 @@ const path = require('path');
 const acorn = require('acorn');
 const walk = require('acorn-walk');
 const jsx = require('acorn-jsx');
+const { extractDeclaredVariables } = require('./utils.js');
+const { wrappedWalker } = require('./customWalker.js');
 
 // add any ignores here (put it the majority I could think of)
 const ignoreList = [
@@ -23,7 +25,6 @@ const COLOR_RESET = "\x1b[0m";
 
 // Function to recursively read and log issues in .js, .jsx, and .cjs files
 const analyzeDirectory = async (dirPath) => {
-  console.log(`Analyzing directory: ${dirPath}`);
   try {
     const files = await fs.readdir(dirPath);
     for (const file of files) {
@@ -84,8 +85,14 @@ const analyzeFile = async (filePath) => {
       // Handle variable declarations
       if (node.type === 'VariableDeclarator') {
         const currentScope = scopeStack[scopeStack.length - 1]; //for tracking nested scopes and accurately figuring out which scope we are in
-        const variableName = node.id.name;
-        currentScope.set(variableName, false); //the false identifies it as not being used yet. 
+        const declaredVariables = extractDeclaredVariables(node.id);
+        for (const variableName of declaredVariables){
+          if (variableName === undefined){
+            console.warn(`Warning: undefined variable at line ${node.loc.start.line} in the file ${filePath}`);
+          } else {
+            currentScope.set(variableName, false); //the false identifies it as not being used yet. 
+          }
+        }
       }
 
       // Handle variable usages
@@ -215,7 +222,8 @@ const analyzeFile = async (filePath) => {
           }
         }
       }
-    });
+    },
+  null, wrappedWalker);
 
     // After traversal, check for unused variables in the global scope
     const globalScope = scopeStack[0];
