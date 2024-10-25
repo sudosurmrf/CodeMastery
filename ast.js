@@ -16,6 +16,10 @@ const ignoreList = [
   "tmpnodejsnpm",
   ".git"
 ];
+// ANSI color codes to make the console logs easier to differentiate
+const COLOR_GREEN = "\x1b[32m"; //not convinced this is actually green lol, but it achieves what we want
+const COLOR_RESET = "\x1b[0m";
+
 
 // Function to recursively read and log issues in .js, .jsx, and .cjs files
 const analyzeDirectory = async (dirPath) => {
@@ -232,7 +236,7 @@ const analyzeFile = async (filePath) => {
 
     // outputs the issues
     for (const issue of issues) {
-      console.log(issue);
+      console.log(`${COLOR_GREEN}${issue}${COLOR_RESET}`);
     }
   } catch (error) {
     console.error(`Failed to parse file ${filePath}: ${error.message}`);
